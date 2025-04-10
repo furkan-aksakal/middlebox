@@ -6,9 +6,11 @@ from scapy.all import IP, AsyncSniffer
 from nats.aio.client import Client as NATS
 
 load_dotenv()
+KEY = 2 
 
 def decode_bits_from_frag(frag):
-    return format(frag & 0b11, '02b')
+    val = (frag - KEY) % 4
+    return format(val, '02b')
 
 async def start_receiver(iface, nc):
     bit_buffer = ""

@@ -3,8 +3,10 @@ import time
 import argparse
 from scapy.all import IP, UDP, send
 
+KEY = 2 
+
 def encode_bits_in_frag(bits_2bit):
-    return int(bits_2bit, 2)
+    return (int(bits_2bit, 2) + KEY) % 4
 
 def send_covert_data(dest_ip, dest_port, message, delay):
     print(f"[Sender] Sending to {dest_ip}:{dest_port} with delay={delay}")
