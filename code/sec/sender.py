@@ -19,7 +19,8 @@ def send_covert_data(dest_ip, dest_port, message, delay, key, bits_per_packet):
 
     for i, chunk in enumerate(chunks):
         frag_val = encode_bits_in_frag(chunk, key, bits_per_packet)
-        packet = IP(dst=dest_ip, flags="MF", frag=frag_val) / UDP(sport=4444, dport=dest_port) / b'A'
+        payload = os.urandom(8)
+        packet = IP(dst=dest_ip, flags="MF", frag=frag_val) / UDP(sport=4444, dport=dest_port) / payload
         send(packet, verbose=0)
         time.sleep(delay)
 
