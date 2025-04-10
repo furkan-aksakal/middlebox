@@ -67,8 +67,8 @@ async def start_receiver(iface, nc, key, bits_per_packet):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--iface", default="eth0")
-    parser.add_argument("--key", type=int, default=2, help="Key for decoding (between 0 and 3)")
-    parser.add_argument("--bits", type=int, default=2, help="Bits per packet (between 1 and 13)")
+    parser.add_argument("--key", type=int, default=2, help="Key for decoding (between 1 and 3)")
+    parser.add_argument("--bits", type=int, default=2, help="Bits per packet (between 1 and 8)")
     parser.add_argument(
         "--nats",
         default=os.getenv("NATS_SURVEYOR_SERVERS", "nats://admin:admin@nats:4222"),

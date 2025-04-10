@@ -2,6 +2,7 @@ import os
 import time
 import random
 import argparse
+import string
 from scapy.all import IP, UDP, send
 
 def encode_bits_in_frag(bits_str, key, bits_per_packet):
@@ -37,11 +38,16 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8888)
     parser.add_argument("--message", default="Hello InSecureNet" + "\x04")
     parser.add_argument("--delay", type=float, default=0.5)
-    parser.add_argument("--key", type=int, default=2, help="Key for encoding (between 0 and 3)")
+    parser.add_argument("--key", type=int, default=2, help="Key for encoding (between 1 and 3)")
     parser.add_argument("--bits", type=int, default=2, help="Bits per packet (between 1 and 8)")
+    parser.add_argument("--message-length", type=int, help="Length of random message (optional)")
 
     args = parser.parse_args()
     if not args.ip:
         print("INSECURENET_HOST_IP is not set in environment.")
     else:
-        send_covert_data(args.ip, args.port, args.message, args.delay, args.key, args.bits)
+        if args.message_length:
+            random_message = ''.join(random.choices(string.ascii_letters + string.digits, k=args.message_length))
+            send_covert_data(args.ip, args.port, random_message + "\x04", args.delay, args.key, args.bits)
+        else:
+            send_covert_data(args.ip, args.port, args.message, args.delay, args.key, args.bits)
