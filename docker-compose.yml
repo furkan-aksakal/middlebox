@@ -107,6 +107,7 @@ services:
     networks:
       exnet:
         ipv4_address: ${INSECURENET_HOST_IP}
+      intnet:
     environment:
     - SECURE_NET=${SECURE_NET}
     - SECURENET_GATEWAY=${SECURENET_GATEWAY}
