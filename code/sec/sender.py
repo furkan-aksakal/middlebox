@@ -8,17 +8,25 @@ def encode_bits_in_frag(bits_str, key, bits_per_packet):
 
 def send_covert_data(dest_ip, dest_port, message, delay, key, bits_per_packet):
     print(f"[Sender] Sending to {dest_ip}:{dest_port} with delay={delay}, bits={bits_per_packet}")
-    for char in message:
-        bits = format(ord(char), '08b')
-        chunks = [bits[i:i+bits_per_packet] for i in range(0, len(bits), bits_per_packet)]
-        for chunk in chunks:
-            if len(chunk) < bits_per_packet:
-                chunk = chunk.ljust(bits_per_packet, '0')
-            frag_val = encode_bits_in_frag(chunk, key, bits_per_packet)
-            packet = IP(dst=dest_ip, flags="MF", frag=frag_val) / UDP(sport=4444, dport=dest_port) / b'A'
-            send(packet, verbose=0)
-            time.sleep(delay)
-        print(f"[Sender] Sent: {repr(char)}")
+
+    bitstream = ''.join(format(ord(c), '08b') for c in message)
+
+    pad_len = (bits_per_packet - (len(bitstream) % bits_per_packet)) % bits_per_packet
+    if pad_len > 0:
+        bitstream += '0' * pad_len
+    
+    chunks = [bitstream[i:i+bits_per_packet] for i in range(0, len(bitstream), bits_per_packet)]
+
+    for i, chunk in enumerate(chunks):
+        frag_val = encode_bits_in_frag(chunk, key, bits_per_packet)
+        packet = IP(dst=dest_ip, flags="MF", frag=frag_val) / UDP(sport=4444, dport=dest_port) / b'A'
+        send(packet, verbose=0)
+        time.sleep(delay)
+
+        if i % (8 // bits_per_packet) == 0:
+            char_index = i // (8 // bits_per_packet)
+            if char_index < len(message):
+                print(f"[Sender] Sent: {repr(message[char_index])}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -27,7 +35,7 @@ if __name__ == "__main__":
     parser.add_argument("--message", default="Hello InSecureNet" + "\x04")
     parser.add_argument("--delay", type=float, default=0.5)
     parser.add_argument("--key", type=int, default=2, help="Key for encoding (between 0 and 3)")
-    parser.add_argument("--bits", type=int, default=2, help="Bits per packet (between 1 and 13)")
+    parser.add_argument("--bits", type=int, default=2, help="Bits per packet (between 1 and 8)")
 
     args = parser.parse_args()
     if not args.ip:
