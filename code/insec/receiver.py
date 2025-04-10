@@ -7,8 +7,8 @@ from nats.aio.client import Client as NATS
 
 load_dotenv()
 
-def decode_bit_from_frag(frag):
-    return '1' if (frag & 1) else '0'
+def decode_bits_from_frag(frag):
+    return format(frag & 0b11, '02b')
 
 async def start_receiver(iface, nc):
     bit_buffer = ""
@@ -19,11 +19,10 @@ async def start_receiver(iface, nc):
         nonlocal bit_buffer, char_buffer
         if IP in packet:
             frag = packet[IP].frag
-            bit = decode_bit_from_frag(frag)
+            bit = decode_bits_from_frag(frag)
             bit_buffer += bit
             if len(bit_buffer) >= 8:
                 char = chr(int(bit_buffer[:8], 2))
-                
                 char_buffer += char
                 bit_buffer = bit_buffer[8:]
 

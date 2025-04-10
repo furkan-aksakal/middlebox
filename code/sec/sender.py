@@ -3,19 +3,20 @@ import time
 import argparse
 from scapy.all import IP, UDP, send
 
-def encode_bit_in_frag(bit):
-    return 1 if bit == '1' else 0
+def encode_bits_in_frag(bits_2bit):
+    return int(bits_2bit, 2)
 
 def send_covert_data(dest_ip, dest_port, message, delay):
     print(f"[Sender] Sending to {dest_ip}:{dest_port} with delay={delay}")
     for char in message:
         bits = format(ord(char), '08b')
-        for bit in bits:
-            frag_val = encode_bit_in_frag(bit)
+        chunks = [bits[i:i+2] for i in range(0, 8, 2)]
+        for chunk in chunks:
+            frag_val = encode_bits_in_frag(chunk)
             packet = IP(dst=dest_ip, flags="MF", frag=frag_val) / UDP(sport=4444, dport=dest_port) / b'A'
             send(packet, verbose=0)
             time.sleep(delay)
-        print(f"[Sender] Sent: {char}")
+        print(f"[Sender] Sent: {repr(char)}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
