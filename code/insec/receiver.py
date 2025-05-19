@@ -1,61 +1,66 @@
+import time
+import random
 import argparse
 import asyncio
-import os
-import time
-from dotenv import load_dotenv
 from scapy.all import IP, AsyncSniffer
 from nats.aio.client import Client as NATS
+from mitigator import mitigate_packet
 
-load_dotenv()
-
-def decode_bits_from_frag(frag, key, bits_per_packet):
-    val = (frag - key) % (2 ** bits_per_packet)
-    return format(val, f'0{bits_per_packet}b')
+def decode_and_unmask(frag, prng, bits_per_packet):
+    data_bits = bits_per_packet
+    mask   = prng.getrandbits(data_bits)
+    raw    = frag ^ mask
+    return format(raw, f'0{data_bits}b')
 
 async def start_receiver(iface, nc, key, bits_per_packet):
+    prng       = random.Random(key)
     bit_buffer = ""
-    char_buffer = ""
+    message    = ""
     start_time = None
-    loop = asyncio.get_running_loop()
+    loop       = asyncio.get_running_loop()
 
-    async def handle_packet(packet):
-        nonlocal bit_buffer, char_buffer, start_time
-        if IP in packet:
-            frag = packet[IP].frag
-            bits = decode_bits_from_frag(frag, key, bits_per_packet)
-            bit_buffer += bits
+    async def handle(pkt):
+        nonlocal bit_buffer, message, start_time
+        pkt = mitigate_packet(pkt)
+        if IP not in pkt:
+            return
+        frag = pkt[IP].frag
+        bits = decode_and_unmask(frag, prng, bits_per_packet)
+        if bits is None:
+            return
 
-            if start_time is None:
-                start_time = time.time()
-            
-            while len(bit_buffer) >= 8:
-                char = chr(int(bit_buffer[:8], 2))
-                char_buffer += char
-                bit_buffer = bit_buffer[8:]
+        if start_time is None:
+            start_time = time.time()
+        bit_buffer += bits
 
-                if char == "\x04":
-                    end_time = time.time()
-                    duration = end_time - start_time
-                    print("[Receiver] EOF received. Full message:", char_buffer[:-1])
-                    print(f"[Receiver] 🕒 Message received in {duration:.3f} seconds")
-                    await nc.close()
-                    sniffer.stop()
-                    return
-                else:
-                    print(f"[Receiver] Got char: {repr(char)}")
+        while len(bit_buffer) >= 8:
+            b = bit_buffer[:8]
+            bit_buffer = bit_buffer[8:]
+            ch = chr(int(b, 2))
+            if ch == "\x04":
+                duration = time.time() - start_time
+                print("[Receiver] EOF; message:", message)
+                print(f"[Receiver] 🕒 Time: {duration:.3f}s")
+                await nc.close()
+                sniffer.stop()
+                return
+            message += ch
+            print(f"[Receiver] Got char: {ch!r}")
 
-            await nc.publish("outpktinsec", bytes(packet[IP]))
+        await nc.publish("outpktinsec", bytes(pkt[IP]))
 
-    def packet_callback(pkt):
-        asyncio.run_coroutine_threadsafe(handle_packet(pkt), loop)
+    def cb(pkt):
+        asyncio.run_coroutine_threadsafe(handle(pkt), loop)
+        return None
 
     sniffer = AsyncSniffer(
         iface=iface,
         filter="ip and udp",
-        prn=packet_callback
+        prn=cb,
+        store=False
     )
     sniffer.start()
-    print(f"[Receiver] Listening on {iface} with bits={bits_per_packet} and key={key}")
+    print(f"[Receiver] Hardened receiver on {iface}, bits={bits_per_packet}")
 
     try:
         while sniffer.running:
@@ -65,22 +70,15 @@ async def start_receiver(iface, nc, key, bits_per_packet):
         await nc.close()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--iface", default="eth0")
-    parser.add_argument("--key", type=int, default=2, help="Key for decoding (between 1 and 3)")
-    parser.add_argument("--bits", type=int, default=2, help="Bits per packet (between 1 and 8)")
-    parser.add_argument(
-        "--nats",
-        default=os.getenv("NATS_SURVEYOR_SERVERS", "nats://admin:admin@nats:4222"),
-        help="NATS server URL"
-    )
+    p = argparse.ArgumentParser()
+    p.add_argument("--iface", default="eth0")
+    p.add_argument("--key",   type=int, default=42)
+    p.add_argument("--bits",  type=int, default=4)
+    p.add_argument("--nats",  default="nats://admin:admin@nats:4222")
+    args = p.parse_args()
 
-    args = parser.parse_args()
     nc = NATS()
-
     async def main():
-        print(f"[Receiver] Connecting to NATS at {args.nats}")
         await nc.connect(servers=[args.nats])
         await start_receiver(args.iface, nc, args.key, args.bits)
-
     asyncio.run(main())
