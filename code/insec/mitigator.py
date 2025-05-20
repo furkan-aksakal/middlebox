@@ -33,7 +33,8 @@ def mitigate_packet(pkt):
             mitigation_active = False
             print("[MITIGATOR] Mitigation phase ended")
         else:
-            print(f"[MITIGATOR] Dropping pkt frag={frag}, {mitigation_count} left")
+            pkt[IP].frag = 0
+            print(f"[MITIGATOR] Cleaned pkt frag={frag}, {mitigation_count} left")
             return None
 
     pkt[IP].id  = random.randint(0, 0xFFFF)

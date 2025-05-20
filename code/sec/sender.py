@@ -1,4 +1,4 @@
-# sender.py
+import string
 import os
 import time
 import random
@@ -46,7 +46,7 @@ def send_covert_data(dest_ip, dest_port, message, delay, key,
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--ip",          required=True)
+    p.add_argument("--ip", default="10.0.0.21", help="Destination IP")
     p.add_argument("--port",        type=int, default=8888)
     p.add_argument("--message",     default="Hello InS\x04")
     p.add_argument("--delay",       type=float, default=0.01)
@@ -63,7 +63,6 @@ if __name__ == "__main__":
         p.error("--bits must be ≥1")
 
     if args.message_length:
-        import string
         msg = ''.join(random.choices(string.ascii_letters + string.digits,
                                      k=args.message_length)) + "\x04"
     else:
