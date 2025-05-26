@@ -4,7 +4,6 @@ import argparse
 import asyncio
 from scapy.all import IP, AsyncSniffer
 from nats.aio.client import Client as NATS
-from mitigator import mitigate_packet
 
 def decode_and_unmask(frag, prng, bits_per_packet):
     data_bits = bits_per_packet
@@ -21,7 +20,6 @@ async def start_receiver(iface, nc, key, bits_per_packet):
 
     async def handle(pkt):
         nonlocal bit_buffer, message, start_time
-        pkt = mitigate_packet(pkt)
         if IP not in pkt:
             return
         frag = pkt[IP].frag

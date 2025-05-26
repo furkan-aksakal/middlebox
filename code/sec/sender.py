@@ -48,7 +48,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--ip", default="10.0.0.21", help="Destination IP")
     p.add_argument("--port",        type=int, default=8888)
-    p.add_argument("--message",     default="Hello InS\x04")
+    p.add_argument("--message",     default="Hello InSecureNet\x04")
     p.add_argument("--delay",       type=float, default=0.01)
     p.add_argument("--key",         type=int, default=42)
     p.add_argument("--bits",        type=int, default=4,
