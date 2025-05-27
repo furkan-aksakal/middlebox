@@ -1,29 +1,38 @@
-import time, random
+import time
+import random
 import numpy as np
 from scapy.all import IP
 from detector import process_frag_for_detection, log_entries
 
-WINDOW_SIZE       = 50
+WINDOW_SIZE = 50
 MITIGATION_WINDOW = 20
 
+normal_fragments = []
+MAX_NORMAL_SAMPLES = 100
+
 mitigation_active = False
-mitigation_count  = 0
+mitigation_count = 0
 
 def mitigate_packet(pkt):
-
-    global mitigation_active, mitigation_count
+    global mitigation_active, mitigation_count, normal_fragments
 
     if IP not in pkt:
         return pkt
 
     frag = pkt[IP].frag
 
+    if not mitigation_active and frag > 0:
+        if len(normal_fragments) < MAX_NORMAL_SAMPLES:
+            normal_fragments.append(frag)
+        elif random.random() < 0.1:
+            idx = random.randint(0, MAX_NORMAL_SAMPLES - 1)
+            normal_fragments[idx] = frag
+
     process_frag_for_detection(frag)
 
     if log_entries and log_entries[-1]["alert"]:
         mitigation_active = True
         mitigation_count = MITIGATION_WINDOW
-
         log_entries[-1]["alert"] = False
         print("[MITIGATOR] Mitigation phase engaged")
 
@@ -33,10 +42,22 @@ def mitigate_packet(pkt):
             mitigation_active = False
             print("[MITIGATOR] Mitigation phase ended")
         else:
-            pkt[IP].frag = 0
-            print(f"[MITIGATOR] Cleaned pkt frag={frag}, {mitigation_count} left")
-            return None
+            if frag > 0:
+                if normal_fragments:
+                    new_frag = random.choice(normal_fragments)
+                else:
+                    new_frag = random.randint(1, 20) * 185
+                
+                print(f"[MITIGATOR] Randomized pkt frag={frag} → {new_frag}, {mitigation_count} left")
+                pkt[IP].frag = new_frag
+                
+                if random.random() < 0.7:
+                    pkt[IP].flags = random.choice([0, 1])
 
-    pkt[IP].id  = random.randint(0, 0xFFFF)
+                if random.random() < 0.5:
+                    return None
+
+    pkt[IP].id = random.randint(0, 0xFFFF)
     pkt[IP].ttl = random.randint(30, 64)
+    
     return pkt
