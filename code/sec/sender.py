@@ -45,6 +45,28 @@ def generate_realistic_fragmentation(idx, total_chunks, base_prng):
         
     return flags, frag_offset
 
+def generate_realistic_network_behavior(idx, base_prng):
+    ttl = base_prng.choice([32, 48, 56, 60, 64, 128])
+
+    ip_id = base_prng.randint(1000, 65535)
+
+    if base_prng.random() < 0.8:
+        flags = 0
+    else:
+        flags = "MF"
+    
+    return ttl, ip_id, flags
+
+def generate_realistic_timing(base_delay, idx, base_prng):
+    if idx > 0 and idx % base_prng.randint(8, 16) == 0:
+        return base_delay * base_prng.uniform(2.0, 5.0)
+
+    if idx > 2 and idx % 7 == 0 and base_prng.random() < 0.3:
+        return base_delay * 0.4
+
+    jitter = base_prng.gauss(0, 0.3) * base_delay
+    return max(0.001, base_delay + jitter)
+
 def send_covert_data(dest_ip, dest_port, message, delay, key,
                      bits_per_packet, payload_min, payload_max):
 
@@ -52,7 +74,6 @@ def send_covert_data(dest_ip, dest_port, message, delay, key,
     data_bits = bits_per_packet
     
     bitstream = ''.join(format(ord(c), '08b') for c in message)
-
     pad_len = (data_bits - len(bitstream) % data_bits) % data_bits
     bitstream += '0' * pad_len
     
@@ -63,42 +84,50 @@ def send_covert_data(dest_ip, dest_port, message, delay, key,
     print(f"[Sender] Starting transmission of {len(message)} chars ({total_chunks} packets)")
     print(f"[Sender] Using key: {key}")
 
-    normal_packet_interval = max(5, total_chunks // 10)
+    packet_times = []
+    ip_id_values = []
+    fragment_values = []
 
     for idx, chunk in enumerate(chunks):
         chunk_prng = create_prng(key, idx)
 
-        packet_delay = delay
-        if idx > 0 and idx % 10 == 0:
-            packet_delay = delay * base_prng.uniform(2, 5)
-            
-        time.sleep(packet_delay + random.uniform(-packet_delay/3, packet_delay/3))
+        packet_delay = generate_realistic_timing(delay, idx, base_prng)
+        time.sleep(packet_delay)
+        packet_times.append(time.time())
 
-        masked = encode_and_mask(chunk, chunk_prng)
+        frag_value = encode_and_mask(chunk, chunk_prng)
+        fragment_values.append(frag_value)
 
         flags, frag_offset = generate_realistic_fragmentation(idx, total_chunks, base_prng)
 
-        is_decoy = (idx % normal_packet_interval == normal_packet_interval - 1)
+        ttl, ip_id, flags_behavior = generate_realistic_network_behavior(idx, base_prng)
+        ip_id_values.append(ip_id)
         
-        if is_decoy:
-            frag_value = masked
-            print(f"[Sender] Sending decoy packet (still carries data)")
+        actual_flags = flags
+        
+        if idx % 3 == 0 and frag_value == 0:
+            actual_flags = "MF"
+
+        if idx % 5 == 4:
+            payload_size = base_prng.randint(payload_min, max(payload_min+4, payload_max//2))
         else:
-            frag_value = masked
+            payload_size = base_prng.randint(payload_min, payload_max)
 
         pkt = IP(
             dst=dest_ip, 
-            flags=flags, 
+            flags=actual_flags, 
             frag=frag_value,
-            id=base_prng.randint(1000, 65535)
+            id=ip_id,
+            ttl=ttl
         ) / UDP(
             sport=base_prng.randint(49152, 65535),
             dport=dest_port
-        ) / os.urandom(base_prng.randint(payload_min, payload_max))
+        ) / os.urandom(payload_size)
         
         send(pkt, verbose=0)
-        flags_text = "MF" if flags == 1 else "none"
-        print(f"[Sender] Sent chunk {idx}/{total_chunks-1}: bits={chunk}, masked={frag_value}, flags={flags_text}")
+        
+        flags_text = "MF" if actual_flags == 1 or actual_flags == "MF" else "none"
+        print(f"[Sender] Sent chunk {idx}/{total_chunks-1}: bits={chunk}, masked={frag_value}, frag={frag_value}, flags={flags_text}, delay={packet_delay:.3f}s")
         
         bit_buffer += chunk
         while len(bit_buffer) >= 8:
@@ -108,11 +137,30 @@ def send_covert_data(dest_ip, dest_port, message, delay, key,
             if ch == "\x04":
                 print("[Sender] EOF detected, transmission complete")
 
+                if len(packet_times) > 1:
+                    delays = [packet_times[i] - packet_times[i-1] for i in range(1, len(packet_times))]
+                    avg_delay = sum(delays) / len(delays)
+                    jitter = sum(abs(d - avg_delay) for d in delays) / len(delays)
+                    print(f"[Sender] Average delay: {avg_delay:.3f}s, jitter: {jitter:.3f}s")
+                
                 for i in range(3):
                     time.sleep(delay * base_prng.uniform(0.5, 1.5))
-                    trailer = IP(dst=dest_ip, flags=0) / UDP(sport=base_prng.randint(49152, 65535), dport=dest_port) / os.urandom(payload_min)
+                    trailing_offset = i * 185
+                    trailing_flags = "MF" if i < 2 else 0
+                    
+                    trailer = IP(
+                        dst=dest_ip, 
+                        flags=trailing_flags,
+                        frag=trailing_offset,
+                        id=base_prng.randint(1000, 65535),
+                        ttl=base_prng.choice([32, 48, 56, 60, 64, 128])
+                    ) / UDP(
+                        sport=base_prng.randint(49152, 65535),
+                        dport=dest_port
+                    ) / os.urandom(base_prng.randint(payload_min, payload_max))
+                    
                     send(trailer, verbose=0)
-                    print("[Sender] Sent trailing packet")
+                    print(f"[Sender] Sent trailing packet {i+1}/3: frag={trailing_offset}, flags={trailing_flags}")
                     
                 return
             print(f"[Sender] → Assembled char: {ch!r} from {byte_str}")
@@ -121,7 +169,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--ip", default="10.0.0.21", help="Destination IP")
     p.add_argument("--port", type=int, default=8888)
-    p.add_argument("--message", default="Hello Insecurenet. I am furkan. I am ceng student at METU. this is information hiding\x04")
+    p.add_argument("--message", default="Hello Insecurenet. I am Furkan. I am a student at METU CENG Department.\x04")
     p.add_argument("--delay", type=float, default=0.1)
     p.add_argument("--key", type=int, default=42)
     p.add_argument("--bits", type=int, default=4, help="Number of data bits per packet")

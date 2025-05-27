@@ -3,6 +3,7 @@ import random
 import argparse
 import asyncio
 import hashlib
+from collections import deque
 from scapy.all import IP, AsyncSniffer
 from nats.aio.client import Client as NATS
 
@@ -50,11 +51,12 @@ async def start_receiver(iface, nc, key, bits_per_packet):
         flags = pkt[IP].flags
         frag_offset = getattr(pkt[IP], 'fragOffset', 0)
         ip_id = pkt[IP].id
+        ttl = pkt[IP].ttl
         
         current_idx = packet_count
         packet_count += 1
         chunk_prng = create_prng(key, current_idx)
-        
+                    
         bits = decode_and_unmask(frag, chunk_prng, bits_per_packet)
         
         if bits is None:
@@ -78,10 +80,10 @@ async def start_receiver(iface, nc, key, bits_per_packet):
             if ch == "\x04":
                 duration = time.time() - start_time
                 print("[Receiver] EOF; message:", message)
-                print(f"[Receiver] 🕒 Time: {duration:.3f}s")
+                print(f"[Receiver] Time: {duration:.3f}s")
                 await nc.close()
                 sniffer.stop()
-                return
+                return                
             message += ch
             print(f"[Receiver] Got char: {ch!r}")
         
@@ -98,7 +100,7 @@ async def start_receiver(iface, nc, key, bits_per_packet):
         store=False
     )
     sniffer.start()
-    print(f"[Receiver] Hardened receiver on {iface}, bits={bits_per_packet}")
+    print(f"[Receiver] Enhanced network-aware receiver on {iface}, bits={bits_per_packet}")
 
     try:
         while sniffer.running:
