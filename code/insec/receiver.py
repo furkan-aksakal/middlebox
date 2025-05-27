@@ -19,7 +19,6 @@ def create_prng(key, chunk_index):
 
 def decode_and_unmask(frag, prng, bits_per_packet):
     frag = frag & 0x1FFF
-    
     mask1 = prng.getrandbits(bits_per_packet)
     mask2 = (mask1 ^ 0xA5) & ((1 << bits_per_packet) - 1)
 
@@ -49,22 +48,22 @@ async def start_receiver(iface, nc, key, bits_per_packet):
 
         frag = pkt[IP].frag
         flags = pkt[IP].flags
-
-        if flags != 1:
-            return
-
-        chunk_prng = create_prng(key, packet_count)
-
+        frag_offset = getattr(pkt[IP], 'fragOffset', 0)
+        ip_id = pkt[IP].id
+        
+        current_idx = packet_count
+        packet_count += 1
+        chunk_prng = create_prng(key, current_idx)
+        
         bits = decode_and_unmask(frag, chunk_prng, bits_per_packet)
         
-        packet_count += 1
-        
         if bits is None:
-            print(f"[Receiver] Failed to decode packet {packet_count}")
+            print(f"[Receiver] Failed to decode packet {current_idx}")
             return
 
-        print(f"[Receiver] Packet {packet_count}: frag={frag}, decoded={bits}")
-
+        flags_text = "MF" if flags == 1 else "none"
+        print(f"[Receiver] Packet {current_idx}: frag={frag}, flags={flags_text}, decoded={bits}")
+        
         if start_time is None:
             start_time = time.time()
             print("[Receiver] First packet received, starting message assembly")
@@ -75,7 +74,7 @@ async def start_receiver(iface, nc, key, bits_per_packet):
             b = bit_buffer[:8]
             bit_buffer = bit_buffer[8:]
             ch = chr(int(b, 2))
-            
+
             if ch == "\x04":
                 duration = time.time() - start_time
                 print("[Receiver] EOF; message:", message)
@@ -83,7 +82,6 @@ async def start_receiver(iface, nc, key, bits_per_packet):
                 await nc.close()
                 sniffer.stop()
                 return
-
             message += ch
             print(f"[Receiver] Got char: {ch!r}")
         
